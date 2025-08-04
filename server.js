@@ -1,42 +1,58 @@
-
 // Forza Horizon 4/5 UDP Server
-// This server listens for UDP packets from Forza Horizon 4/5 and sends data to
-// an Arduino device connected via serial port. 
-// It also logs RPM, Gear, Speed, and Steer values to the console.
+// Questo server ascolta i pacchetti UDP da Forza Horizon 4/5 e invia i dati ad
+// un dispositivo Arduino collegato via porta seriale. 
+// Logga anche RPM, Gear, Speed e Steer sulla console.
 
 //.  npm install serialport @serialport/list
 
-// 
-//. node server.js
-// 
-
-
 const PORT = 5300;
+//const HOST = "127.0.0.1";
 const HOST = "0.0.0.0";
 
 const dgram = require("dgram");
 const server = dgram.createSocket("udp4");
 
-const SerialPort = require('serialport');
-const SerialPortList = require('@serialport/list');
+const { SerialPort, SerialPortStream } = require('serialport');
 
 let arduino = null;
-const BAUD_RATE = 9600;
+const BAUD_RATE = 2000000;
 
-// Ricerca automatica della porta Arduino
-SerialPortList.list().then(ports => {
-    const arduinoPort = ports.find(port =>
-        port.path.includes('usb') || port.path.includes('ACM')
-    );
-    if (arduinoPort) {
-        arduino = new SerialPort(arduinoPort.path, { baudRate: BAUD_RATE });
-        arduino.on('open', () => {
-            console.log('Collegato ad Arduino sulla porta:', arduinoPort.path);
+let isRacing = false;
+
+// Funzione di autodetect e connessione ad Arduino
+function autoDetectArduino() {
+    SerialPort.list().then(ports => {
+        const arduinoPort = ports.find(port =>
+            (port.manufacturer && /arduino/i.test(port.manufacturer)) ||
+            (port.path && (port.path.includes('usb') || port.path.includes('ACM') || port.path.includes('COM')))
+        );
+        if (!arduinoPort) {
+            console.error('Arduino non trovato! Collega il dispositivo e riavvia.');
+            process.exit(1);
+        }
+        console.log('Arduino trovato porta -> ' + arduinoPort.path);
+        arduino = new SerialPort({ path: arduinoPort.path, baudRate: BAUD_RATE, autoOpen: false });
+        arduino.open(err => {
+            if (err) {
+                return console.error('Errore di apertura della porta: ', err.message);
+            }
+            console.log('Porta Arduino aperta con successo: ' + arduinoPort.path);
+
+//Iniva il primo messaggio di benvenuto ad Arduino
+            sendDataArduino('T', '0', '0', '0');
+
         });
-    } else {
-        console.log('Arduino non trovato! Collega il dispositivo e riavvia.');
-    }
-});
+        arduino.on('error', (err) => {
+            console.error('Errore Arduino:', err.message);
+        });
+    }).catch(err => {
+        console.error('Errore durante la ricerca della porta Arduino:', err);
+        process.exit(1);
+    });
+};
+
+// Avvia la ricerca automatica all'avvio
+autoDetectArduino();
 
 let forza_data = [
     {
@@ -132,13 +148,33 @@ let forza_data = [
 ];
 
 //FH4/FH5 buffer offset
-
 const bufferOffset = 12;
 
 server.on("listening", function () {
     var address = server.address();
     console.log(">  Listening on " + address.address + ":" + address.port);
 });
+
+
+function sendDataArduino(RPM, flag, DRS, PITS) {
+
+  let msg = String(RPM).concat('|'.concat(flag.concat('|'.concat(DRS.concat('|'.concat(PITS.concat('\n')))))));
+
+  arduino.write(msg, (err) => {
+    if (err) {
+      return console.log('Error on write: ', err.message);
+    }
+
+    // Tiene via i valori precedenti per evitare di reinviarli
+    PrevRPM = RPM;
+    Prevflag = flag;
+    PrevDRS = DRS;
+    PrevPITS = PITS;
+
+    arduino.flush();
+    console.log('INVIO  ->  ' + msg);
+  });
+};
 
 function dataParser(message) {
     forza_data[0].isRaceOn = message.readInt32LE(0) ? true : false;
@@ -232,12 +268,27 @@ function dataParser(message) {
 
 server.on("message", function (message, remote) {
     dataParser(message);
+
     if (forza_data[0].isRaceOn) {
+
+        isRacing = true;
+
         let rpm = parseInt(forza_data[0].CurrentEngineRpm);
         let gear = forza_data[0].Gear;
+        
+        // Calcola la percentuale di RPM rispetto al massimo
+      let rpmPercent = forza_data[0].EngineMaxRpm > 0 ? Math.round((forza_data[0].CurrentEngineRpm / forza_data[0].EngineMaxRpm) * 100) : 0;
+       
+      
         // Invia RPM e Gear ad Arduino se collegato
         if (arduino && arduino.isOpen) {
-            arduino.write(`${rpm},${gear}\n`);
+          //  arduino.write(`${rpm},${gear}\n`);
+
+         // console.log("\x1b[31m", "RPM : " + rpm + " | RPM Perc: "  +rpmPercent + " | Gear: " + gear + " | Speed: " + parseInt((forza_data[0].Speed) * (60 * 60) / 1000) + "km/h | Steer: " + forza_data[0].Steer);
+            
+            // Invia i dati ad Arduino
+          sendDataArduino(rpmPercent, '0', '0', '0');
+
         }
 
         if (rpm >= (forza_data[0].EngineMaxRpm - 1200)) {
@@ -247,12 +298,22 @@ server.on("message", function (message, remote) {
         } else {
             console.log("\x1b[32m", "RPM : " + rpm + " | Gear: " + gear + " | Speed: " + parseInt((forza_data[0].Speed) * (60 * 60) / 1000) + "km/h | Steer: " + forza_data[0].Steer);
         }
+    }else{
+
+        if (isRacing) {
+          sendDataArduino('T', '0', '0', '0');
+
+          isRacing = false;
+        };
     }
 });
 
 server.bind(PORT, HOST);
 
 process.on("SIGINT", function () {
+    if (arduino && arduino.isOpen) {
+        arduino.close();
+    }
     console.log("\n" + "> Exiting....");
     process.exit();
 });
