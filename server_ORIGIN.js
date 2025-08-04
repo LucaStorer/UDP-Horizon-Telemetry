@@ -1,42 +1,8 @@
-
-// Forza Horizon 4/5 UDP Server
-// This server listens for UDP packets from Forza Horizon 4/5 and sends data to
-// an Arduino device connected via serial port. 
-// It also logs RPM, Gear, Speed, and Steer values to the console.
-
-//.  npm install serialport @serialport/list
-
-// 
-//. node server.js
-// 
-
-
 const PORT = 5300;
 const HOST = "0.0.0.0";
 
 const dgram = require("dgram");
 const server = dgram.createSocket("udp4");
-
-const SerialPort = require('serialport');
-const SerialPortList = require('@serialport/list');
-
-let arduino = null;
-const BAUD_RATE = 9600;
-
-// Ricerca automatica della porta Arduino
-SerialPortList.list().then(ports => {
-    const arduinoPort = ports.find(port =>
-        port.path.includes('usb') || port.path.includes('ACM')
-    );
-    if (arduinoPort) {
-        arduino = new SerialPort(arduinoPort.path, { baudRate: BAUD_RATE });
-        arduino.on('open', () => {
-            console.log('Collegato ad Arduino sulla porta:', arduinoPort.path);
-        });
-    } else {
-        console.log('Arduino non trovato! Collega il dispositivo e riavvia.');
-    }
-});
 
 let forza_data = [
     {
@@ -233,19 +199,12 @@ function dataParser(message) {
 server.on("message", function (message, remote) {
     dataParser(message);
     if (forza_data[0].isRaceOn) {
-        let rpm = parseInt(forza_data[0].CurrentEngineRpm);
-        let gear = forza_data[0].Gear;
-        // Invia RPM e Gear ad Arduino se collegato
-        if (arduino && arduino.isOpen) {
-            arduino.write(`${rpm},${gear}\n`);
-        }
-
-        if (rpm >= (forza_data[0].EngineMaxRpm - 1200)) {
-            console.log("\x1b[31m", "RPM : " + rpm + " | Gear: " + gear + " | Speed: " + parseInt((forza_data[0].Speed) * (60 * 60) / 1000) + "km/h | Steer: " + forza_data[0].Steer);
-        } else if (rpm >= (forza_data[0].EngineMaxRpm - 2000)) {
-            console.log("\x1b[33m", "RPM : " + rpm + " | Gear: " + gear + " | Speed: " + parseInt((forza_data[0].Speed) * (60 * 60) / 1000) + "km/h | Steer: " + forza_data[0].Steer);
+        if (forza_data[0].CurrentEngineRpm >= (forza_data[0].EngineMaxRpm - 1200)) {
+            console.log("\x1b[31m", "RPM : " + parseInt(forza_data[0].CurrentEngineRpm) + " | Gear: " + forza_data[0].Gear + " | Speed: " + parseInt((forza_data[0].Speed) * (60 * 60) / 1000) + "km/h | Steer: " + forza_data[0].Steer);
+        } else if (forza_data[0].CurrentEngineRpm >= (forza_data[0].EngineMaxRpm - 2000)) {
+            console.log("\x1b[33m", "RPM : " + parseInt(forza_data[0].CurrentEngineRpm) + " | Gear: " + forza_data[0].Gear + " | Speed: " + parseInt((forza_data[0].Speed) * (60 * 60) / 1000) + "km/h | Steer: " + forza_data[0].Steer);
         } else {
-            console.log("\x1b[32m", "RPM : " + rpm + " | Gear: " + gear + " | Speed: " + parseInt((forza_data[0].Speed) * (60 * 60) / 1000) + "km/h | Steer: " + forza_data[0].Steer);
+            console.log("\x1b[32m", "RPM : " + parseInt(forza_data[0].CurrentEngineRpm) + " | Gear: " + forza_data[0].Gear + " | Speed: " + parseInt((forza_data[0].Speed) * (60 * 60) / 1000) + "km/h | Steer: " + forza_data[0].Steer);
         }
     }
 });
