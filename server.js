@@ -38,7 +38,7 @@ function autoDetectArduino() {
             }
             console.log('Porta Arduino aperta con successo: ' + arduinoPort.path);
 
-//Iniva il primo messaggio di benvenuto ad Arduino
+//Invia il primo messaggio di benvenuto ad Arduino
             sendDataArduino('T', '0', '0', '0');
 
         });
@@ -165,7 +165,7 @@ function sendDataArduino(RPM, flag, DRS, PITS) {
       return console.log('Error on write: ', err.message);
     }
 
-    // Tiene via i valori precedenti per evitare di reinviarli
+    // Tiene via i valori precedenti per evitare di re-inviarli
     PrevRPM = RPM;
     Prevflag = flag;
     PrevDRS = DRS;
@@ -284,7 +284,7 @@ server.on("message", function (message, remote) {
         if (arduino && arduino.isOpen) {
           //  arduino.write(`${rpm},${gear}\n`);
 
-         // console.log("\x1b[31m", "RPM : " + rpm + " | RPM Perc: "  +rpmPercent + " | Gear: " + gear + " | Speed: " + parseInt((forza_data[0].Speed) * (60 * 60) / 1000) + "km/h | Steer: " + forza_data[0].Steer);
+         // console.log("\x1b[31m", "RPM : " + rpm + " | RPM Percentuale: "  +rpmPercent + " | Gear: " + gear + " | Speed: " + parseInt((forza_data[0].Speed) * (60 * 60) / 1000) + "km/h | Steer: " + forza_data[0].Steer);
             
             // Invia i dati ad Arduino
           sendDataArduino(rpmPercent, '0', '0', '0');
